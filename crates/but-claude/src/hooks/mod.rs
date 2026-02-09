@@ -550,11 +550,41 @@ pub fn get_or_create_session(
             crate::rules::update_claude_assignment_rule_target(ctx, rule.id, stack_id, perm)?;
             stack_id
         }
+    } else if let Ok(branch_name) = std::env::var("GITBUTLER_BRANCH") {
+        // User wants this session to target an existing branch
+        let stack_id = stacks
+            .iter()
+            .find(|s| s.heads.iter().any(|h| h.name == branch_name.as_str()))
+            .and_then(|s| s.id)
+            .ok_or_else(|| {
+                anyhow!(
+                    "Branch '{}' specified by GITBUTLER_BRANCH not found in workspace",
+                    branch_name
+                )
+            })?;
+
+        // Remove any existing Claude assignment rule for this stack (from a previous session)
+        let existing_rules = crate::rules::list_claude_assignment_rules(ctx)?;
+        for rule in existing_rules.iter().filter(|r| r.stack_id == stack_id) {
+            but_rules::delete_rule(ctx, &rule.id)?;
+        }
+
+        crate::rules::create_claude_assignment_rule(
+            ctx,
+            Uuid::parse_str(session_id)?,
+            stack_id,
+            perm,
+        )?;
+        stack_id
     } else {
         // If the session is not in the list of sessions, then create a new stack + session entry
-        // Create a new stack
         let stack_id = create_stack(ctx, perm)?;
-        crate::rules::create_claude_assignment_rule(ctx, Uuid::parse_str(session_id)?, stack_id, perm)?;
+        crate::rules::create_claude_assignment_rule(
+            ctx,
+            Uuid::parse_str(session_id)?,
+            stack_id,
+            perm,
+        )?;
         stack_id
     };
     Ok(stack_id)
