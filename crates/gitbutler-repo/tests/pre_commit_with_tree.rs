@@ -224,11 +224,15 @@ fn pre_commit_with_tree_hook_failure() -> Result<()> {
         "#!/bin/sh\necho 'hook failed' >&2\nexit 1\n",
     )?;
 
-    let (result, _post_hook_tree) = pre_commit_with_tree(&ctx, tree_oid)?;
+    let (result, post_hook_tree) = pre_commit_with_tree(&ctx, tree_oid)?;
 
     assert!(
         matches!(result, HookResult::Failure(_)),
         "hook exiting 1 must produce HookResult::Failure"
+    );
+    assert_eq!(
+        post_hook_tree, tree_oid,
+        "post-hook tree should equal the input tree when the hook fails (no changes committed)"
     );
     Ok(())
 }
