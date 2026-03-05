@@ -134,10 +134,12 @@ export class AmendCommitWithChangeDzHandler implements DropzoneHandler {
 				const assignments = data.assignments();
 				const worktreeChanges = changesToDiffSpec(await data.treeChanges(), assignments);
 
-				// Run pre-commit hooks and use the (possibly updated) changes.
-				let effectiveChanges = worktreeChanges;
+				// Run pre-commit hooks. When the hook modifies the index (including via
+				// partial file staging), receive the post-hook tree OID and pass it as
+				// `overrideTree` so the commit engine uses the tree directly.
+				let overrideTree: string | undefined;
 				if (this.runHooks) {
-					effectiveChanges = await this.hooksService.runPreCommitHooks(
+					overrideTree = await this.hooksService.runPreCommitHooks(
 						this.projectId,
 						worktreeChanges,
 					);
@@ -148,7 +150,8 @@ export class AmendCommitWithChangeDzHandler implements DropzoneHandler {
 						projectId: this.projectId,
 						stackId: this.stackId,
 						commitId: this.commit.id,
-						worktreeChanges: effectiveChanges,
+						worktreeChanges,
+						overrideTree,
 					}),
 				);
 
@@ -336,11 +339,13 @@ export class AmendCommitWithHunkDzHandler implements DropzoneHandler {
 				},
 			];
 
-			// Run pre-commit hooks and use the (possibly updated) changes.
-			let effectiveChanges = worktreeChanges;
+			// Run pre-commit hooks. When the hook modifies the index (including via
+			// partial file staging), receive the post-hook tree OID and pass it as
+			// `overrideTree` so the commit engine uses the tree directly.
+			let overrideTree: string | undefined;
 			if (runHooks) {
 				try {
-					effectiveChanges = await this.args.hooksService.runPreCommitHooks(
+					overrideTree = await this.args.hooksService.runPreCommitHooks(
 						projectId,
 						worktreeChanges,
 					);
@@ -352,7 +357,8 @@ export class AmendCommitWithHunkDzHandler implements DropzoneHandler {
 				projectId,
 				stackId,
 				commitId: commit.id,
-				worktreeChanges: effectiveChanges,
+				worktreeChanges,
+				overrideTree,
 			});
 			if (runHooks) {
 				try {

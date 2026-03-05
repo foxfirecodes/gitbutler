@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use anyhow::{Context as _, Result};
-use bstr::BString;
 use but_api_macros::but_api;
 use but_core::DiffSpec;
 use but_ctx::Context;
@@ -98,7 +97,7 @@ pub fn pre_commit_hook_diffspecs(
 
     let context_lines = ctx.settings.context_lines;
 
-    let mut changes_for_tree = changes.clone().into_iter().map(Ok).collect::<Vec<_>>();
+    let mut changes_for_tree = changes.into_iter().map(Ok).collect::<Vec<_>>();
 
     let (new_tree, ..) = but_core::tree::apply_worktree_changes(
         head.detach(),
@@ -110,97 +109,25 @@ pub fn pre_commit_hook_diffspecs(
     let new_tree_git2 = new_tree.to_git2();
     let (hook_result, post_hook_tree) = hooks::pre_commit_with_tree(ctx, new_tree_git2)?;
 
-    // If the hook succeeded and modified the index (staged new changes), compute
-    // the updated diff specs so the caller can include those changes in the commit.
-    // NotConfigured means no hook ran, so the index is unchanged — no updated changes possible.
-    let updated_changes = if matches!(hook_result, HookResult::Success)
-        && post_hook_tree != new_tree_git2
-    {
-        let git2_repo = ctx.git2_repo.get()?;
-        compute_hook_updated_changes(&git2_repo, changes, new_tree_git2, post_hook_tree)?
-    } else {
-        vec![]
-    };
+    // When the hook modifies the index (including partial file staging), we must
+    // return the post-hook tree OID rather than recomputed DiffSpecs.  Using
+    // DiffSpecs with empty `hunk_headers` would cause `apply_worktree_changes`
+    // to read the whole worktree file, silently discarding any partial staging
+    // the hook performed.
+    let post_hook_tree_hex =
+        if matches!(hook_result, HookResult::Success) && post_hook_tree != new_tree_git2 {
+            Some(post_hook_tree.to_string())
+        } else {
+            None
+        };
 
     Ok(match hook_result {
-        HookResult::Success => PreCommitHookDiffspecsResult::Success { updated_changes },
+        HookResult::Success => PreCommitHookDiffspecsResult::Success {
+            post_hook_tree: post_hook_tree_hex,
+        },
         HookResult::NotConfigured => PreCommitHookDiffspecsResult::NotConfigured,
         HookResult::Failure(err) => PreCommitHookDiffspecsResult::Failure(err),
     })
-}
-
-/// Given the diff between the tree that was passed to the pre-commit hook (`original_tree`)
-/// and the tree the hook produced (`post_hook_tree`), return an updated set of [`DiffSpec`]s
-/// that incorporates both the user's original selection and any files the hook additionally
-/// staged.  Files touched by the hook are committed as whole files (empty `hunk_headers`).
-fn compute_hook_updated_changes(
-    repo: &git2::Repository,
-    original_changes: Vec<DiffSpec>,
-    original_tree: git2::Oid,
-    post_hook_tree: git2::Oid,
-) -> Result<Vec<DiffSpec>> {
-    let old_tree = repo.find_tree(original_tree)?;
-    let new_tree = repo.find_tree(post_hook_tree)?;
-    let diff = repo.diff_tree_to_tree(Some(&old_tree), Some(&new_tree), None)?;
-
-    let mut hook_changed_paths: std::collections::HashSet<BString> =
-        std::collections::HashSet::new();
-    let mut hook_added_specs: Vec<DiffSpec> = Vec::new();
-
-    diff.foreach(
-        &mut |delta, _| {
-            let (path, previous_path) = match delta.status() {
-                git2::Delta::Deleted => (
-                    delta
-                        .old_file()
-                        .path()
-                        .map(|p| BString::from(p.as_os_str().as_encoded_bytes())),
-                    None,
-                ),
-                git2::Delta::Renamed => (
-                    delta
-                        .new_file()
-                        .path()
-                        .map(|p| BString::from(p.as_os_str().as_encoded_bytes())),
-                    delta
-                        .old_file()
-                        .path()
-                        .map(|p| BString::from(p.as_os_str().as_encoded_bytes())),
-                ),
-                _ => (
-                    delta
-                        .new_file()
-                        .path()
-                        .map(|p| BString::from(p.as_os_str().as_encoded_bytes())),
-                    None,
-                ),
-            };
-
-            if let Some(path) = path {
-                hook_changed_paths.insert(path.clone());
-                hook_added_specs.push(DiffSpec {
-                    path,
-                    previous_path,
-                    // Empty hunk_headers means "commit the whole file", which is correct
-                    // because the hook staged these changes from the worktree.
-                    hunk_headers: vec![],
-                });
-            }
-            true
-        },
-        None,
-        None,
-        None,
-    )?;
-
-    // Preserve the user's original hunk-level selections for files the hook did not touch,
-    // and replace with whole-file specs for any file the hook modified.
-    let mut result: Vec<DiffSpec> = original_changes
-        .into_iter()
-        .filter(|spec| !hook_changed_paths.contains(&spec.path))
-        .collect();
-    result.extend(hook_added_specs);
-    Ok(result)
 }
 #[but_api]
 #[instrument(err(Debug))]

@@ -16,20 +16,23 @@ export type HookStatus =
 	  };
 
 /**
- * Result of the pre-commit diffspec hook. In addition to the standard hook
- * status, the backend may include `updatedChanges` when the hook staged new
- * files or modifications beyond the user's original selection.  Callers
- * should use `updatedChanges` (when non-empty) instead of the original
- * changes when creating the commit.
+ * Result of the pre-commit diffspec hook.
  *
- * Note: `updatedChanges` only appears on the `"success"` variant — if no
- * hook is configured the index is untouched so there can never be updates.
+ * When the hook modified the git index (including via partial file staging),
+ * the `"success"` variant includes `postHookTree` — the hex OID of the tree
+ * written from the post-hook index.  Callers **must** pass this to
+ * `commit_create` / `commit_amend` as `overrideTree` so the commit engine
+ * uses the tree directly instead of re-reading worktree files (which would
+ * discard partial staging).
+ *
+ * Note: `postHookTree` only appears on `"success"` — if no hook is configured
+ * the index is untouched so there can never be an updated tree.
  */
 export type PreCommitHookDiffspecsStatus =
 	| {
 			status: "success";
-			/** Non-empty only when the hook staged additional changes. */
-			updatedChanges?: DiffSpec[];
+			/** Hex OID of post-hook index tree. Present only when the hook modified the index. */
+			postHookTree?: string;
 	  }
 	| {
 			status: "notconfigured";
@@ -71,12 +74,15 @@ export class HooksService {
 	/**
 	 * Run the pre-commit hooks for the given changes.
 	 *
-	 * Returns the (possibly updated) list of diff specs to use for the
-	 * commit.  If the hook staged new changes the returned list will differ
-	 * from the input `changes`; callers **must** use the returned list when
-	 * creating the commit so that hook-staged modifications are included.
+	 * Returns the `postHookTree` hex OID when the hook modified the git index
+	 * (including via partial file staging).  The caller must pass this as
+	 * `overrideTree` to `commit_create` / `commit_amend` so the commit engine
+	 * uses the hook's staged tree directly.
+	 *
+	 * Returns `undefined` when no hook ran or the hook did not change the index;
+	 * in that case the caller should use its original DiffSpecs.
 	 */
-	async runPreCommitHooks(projectId: string, changes: DiffSpec[]): Promise<DiffSpec[]> {
+	async runPreCommitHooks(projectId: string, changes: DiffSpec[]): Promise<string | undefined> {
 		const loadingToastId = chipToasts.loading("Started pre-commit hooks");
 
 		try {
@@ -93,12 +99,10 @@ export class HooksService {
 			chipToasts.removeChipToast(loadingToastId);
 			chipToasts.success("Pre-commit hooks succeeded");
 
-			// Return the updated changes if the hook staged new files/modifications,
-			// otherwise return the original changes unchanged.
-			if (result?.updatedChanges?.length) {
-				return result.updatedChanges;
-			}
-			return changes;
+			// Return the post-hook tree OID when the hook staged changes (including
+			// partial staging).  Callers must use it as `overrideTree` to avoid
+			// re-reading worktree files and losing partial staging.
+			return result?.status === "success" ? result.postHookTree : undefined;
 		} catch (e: unknown) {
 			chipToasts.removeChipToast(loadingToastId);
 			throw e;

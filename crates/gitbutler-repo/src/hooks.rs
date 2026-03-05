@@ -31,17 +31,29 @@ pub enum HookResult {
     Failure(ErrorData),
 }
 
-/// Result of the pre-commit diffspec hook, which may also carry updated diff specs
-/// when the hook staged additional changes.
+/// Result of the pre-commit diffspec hook, which may also carry the post-hook
+/// tree when the hook staged additional changes (including partial file staging).
 #[derive(Serialize, PartialEq, Debug, Clone)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum PreCommitHookDiffspecsResult {
-    /// The hook passed. `updated_changes` is non-empty when the hook staged new
-    /// changes beyond what was originally selected; callers should use this
-    /// updated list when creating the commit.
+    /// The hook passed.
+    ///
+    /// `post_hook_tree` is `Some(hex_oid)` when the hook modified the git index
+    /// (e.g. by running `git add` or `git add -p`).  Callers **must** use this
+    /// tree directly when creating the commit instead of re-applying their
+    /// original `DiffSpec`s from the worktree — otherwise partial staging (where
+    /// the hook only staged a portion of a file's changes) would be silently
+    /// discarded.
+    ///
+    /// `post_hook_tree` is `None` when the hook ran successfully but left the
+    /// index unchanged; callers should proceed with their original DiffSpecs.
     Success {
-        #[serde(rename = "updatedChanges", default, skip_serializing_if = "Vec::is_empty")]
-        updated_changes: Vec<but_core::DiffSpec>,
+        #[serde(
+            rename = "postHookTree",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        post_hook_tree: Option<String>,
     },
     /// No hook was configured, so no hook ran and the index is unchanged.
     NotConfigured,

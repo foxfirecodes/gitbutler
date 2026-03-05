@@ -96,6 +96,11 @@ pub struct CreateCommitOutcome {
 /// `context_lines` is the amount of lines of context included in each [`HunkHeader`](but_core::HunkHeader), and the value that will be used to recover the existing hunks,
 /// so that the hunks can be matched.
 ///
+/// `override_tree` — when `Some`, skip applying `changes` from the worktree entirely and use the
+/// provided tree OID as the commit tree directly.  This must be used when a pre-commit hook has
+/// modified the git index (including via partial file staging): re-applying `DiffSpec`s from the
+/// worktree would read the full worktree file content and silently discard any partial staging.
+///
 /// Return additional information that helps to understand to what extent the commit was created, as the commit might not contain all the [`DiffSpecs`](DiffSpec)
 /// that were requested if they failed to apply.
 ///
@@ -124,6 +129,33 @@ pub fn create_commit(
     destination: Destination,
     changes: Vec<DiffSpec>,
     context_lines: u32,
+) -> anyhow::Result<CreateCommitOutcome> {
+    create_commit_inner(repo, destination, changes, context_lines, None)
+}
+
+/// Like [`create_commit`] but uses `override_tree` as the commit tree directly, bypassing
+/// the normal `DiffSpec`-from-worktree tree construction.
+///
+/// This **must** be used when a pre-commit hook has modified the git index (including via
+/// partial file staging).  In that case the tree written from the post-hook index is the only
+/// correct source of truth — re-applying `DiffSpec`s from the worktree would read the full
+/// file content and silently discard any partial staging the hook performed.
+pub fn create_commit_with_tree(
+    repo: &gix::Repository,
+    destination: Destination,
+    changes: Vec<DiffSpec>,
+    context_lines: u32,
+    override_tree: gix::ObjectId,
+) -> anyhow::Result<CreateCommitOutcome> {
+    create_commit_inner(repo, destination, changes, context_lines, Some(override_tree))
+}
+
+fn create_commit_inner(
+    repo: &gix::Repository,
+    destination: Destination,
+    changes: Vec<DiffSpec>,
+    context_lines: u32,
+    override_tree: Option<gix::ObjectId>,
 ) -> anyhow::Result<CreateCommitOutcome> {
     let parents = match &destination {
         Destination::NewCommit {
@@ -164,11 +196,23 @@ pub fn create_commit(
             .detach(),
     };
 
-    let CreateTreeOutcome {
-        rejected_specs,
-        destination_tree,
-        changed_tree_pre_cherry_pick,
-    } = create_tree(repo, target_tree, changes, context_lines)?;
+    // When an `override_tree` is provided (e.g. because a pre-commit hook modified
+    // the index, potentially via partial staging), skip `create_tree` entirely and
+    // use the pre-built tree directly.  This is the only correct approach for
+    // partial staging: re-applying DiffSpecs from the worktree would read the full
+    // file content, silently discarding any partial staging the hook performed.
+    let (rejected_specs, destination_tree, changed_tree_pre_cherry_pick) =
+        if let Some(tree) = override_tree {
+            (vec![], Some(tree), Some(tree))
+        } else {
+            let CreateTreeOutcome {
+                rejected_specs,
+                destination_tree,
+                changed_tree_pre_cherry_pick,
+            } = create_tree(repo, target_tree, changes, context_lines)?;
+            (rejected_specs, destination_tree, changed_tree_pre_cherry_pick)
+        };
+
     let new_commit = if let Some(new_tree) = destination_tree {
         match destination {
             Destination::NewCommit {

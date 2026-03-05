@@ -111,12 +111,13 @@
 				isRichTextMode,
 			});
 
-			// Run pre-commit hooks and use the (possibly updated) changes.
-			// Hooks may stage additional files; those will be reflected in the
-			// returned changes and must be included in the commit.
-			let effectiveChanges = worktreeChanges;
+			// Run pre-commit hooks. When the hook modifies the index (including via
+			// partial file staging), we receive the post-hook tree OID and must pass
+			// it as `overrideTree` so the commit engine uses the tree directly
+			// instead of re-reading worktree files (which would discard partial staging).
+			let overrideTree: string | undefined;
 			if ($runCommitHooks) {
-				effectiveChanges = await hooksService.runPreCommitHooks(projectId, worktreeChanges);
+				overrideTree = await hooksService.runPreCommitHooks(projectId, worktreeChanges);
 			}
 
 			const response = await createCommitInStack(
@@ -126,7 +127,8 @@
 					stackId: finalStackId,
 					message: finalMessage,
 					stackBranchName: finalBranchName,
-					worktreeChanges: effectiveChanges,
+					worktreeChanges,
+					overrideTree,
 				},
 				{ properties: analyticsProperties },
 			);
