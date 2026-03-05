@@ -134,8 +134,13 @@ export class AmendCommitWithChangeDzHandler implements DropzoneHandler {
 				const assignments = data.assignments();
 				const worktreeChanges = changesToDiffSpec(await data.treeChanges(), assignments);
 
+				// Run pre-commit hooks and use the (possibly updated) changes.
+				let effectiveChanges = worktreeChanges;
 				if (this.runHooks) {
-					await this.hooksService.runPreCommitHooks(this.projectId, worktreeChanges);
+					effectiveChanges = await this.hooksService.runPreCommitHooks(
+						this.projectId,
+						worktreeChanges,
+					);
 				}
 
 				this.onresult(
@@ -143,7 +148,7 @@ export class AmendCommitWithChangeDzHandler implements DropzoneHandler {
 						projectId: this.projectId,
 						stackId: this.stackId,
 						commitId: this.commit.id,
-						worktreeChanges: worktreeChanges,
+						worktreeChanges: effectiveChanges,
 					}),
 				);
 
@@ -331,9 +336,14 @@ export class AmendCommitWithHunkDzHandler implements DropzoneHandler {
 				},
 			];
 
+			// Run pre-commit hooks and use the (possibly updated) changes.
+			let effectiveChanges = worktreeChanges;
 			if (runHooks) {
 				try {
-					await this.args.hooksService.runPreCommitHooks(projectId, worktreeChanges);
+					effectiveChanges = await this.args.hooksService.runPreCommitHooks(
+						projectId,
+						worktreeChanges,
+					);
 				} catch {
 					return;
 				}
@@ -342,7 +352,7 @@ export class AmendCommitWithHunkDzHandler implements DropzoneHandler {
 				projectId,
 				stackId,
 				commitId: commit.id,
-				worktreeChanges,
+				worktreeChanges: effectiveChanges,
 			});
 			if (runHooks) {
 				try {

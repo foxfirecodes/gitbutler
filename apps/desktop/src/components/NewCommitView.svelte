@@ -111,8 +111,12 @@
 				isRichTextMode,
 			});
 
+			// Run pre-commit hooks and use the (possibly updated) changes.
+			// Hooks may stage additional files; those will be reflected in the
+			// returned changes and must be included in the commit.
+			let effectiveChanges = worktreeChanges;
 			if ($runCommitHooks) {
-				await hooksService.runPreCommitHooks(projectId, worktreeChanges);
+				effectiveChanges = await hooksService.runPreCommitHooks(projectId, worktreeChanges);
 			}
 
 			const response = await createCommitInStack(
@@ -122,7 +126,7 @@
 					stackId: finalStackId,
 					message: finalMessage,
 					stackBranchName: finalBranchName,
-					worktreeChanges,
+					worktreeChanges: effectiveChanges,
 				},
 				{ properties: analyticsProperties },
 			);
