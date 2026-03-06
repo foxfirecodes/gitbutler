@@ -162,6 +162,8 @@ fn print_grouped_with_truncation(
                 #[cfg(feature = "legacy")]
                 SubcommandDiscriminant::Amend => Group::EditingCommits,
                 #[cfg(feature = "legacy")]
+                SubcommandDiscriminant::EditMode => Group::EditingCommits,
+                #[cfg(feature = "legacy")]
                 SubcommandDiscriminant::Squash => Group::EditingCommits,
                 #[cfg(feature = "legacy")]
                 SubcommandDiscriminant::Move => Group::EditingCommits,
@@ -393,6 +395,7 @@ Editing Commits:
   reword       Edit the commit message of the specified commit
   uncommit     Uncommit commits, branches, or committed files
   amend        Amend uncommitted changes into a commit or branch
+  edit-mode    Edit a commit in your stack.
 
 Operation History:
   oplog        Commands for viewing and managing operation history

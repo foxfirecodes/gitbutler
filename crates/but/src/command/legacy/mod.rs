@@ -15,6 +15,7 @@ pub mod commit_message_prep;
 pub(crate) mod conflict_notice;
 pub mod diff;
 pub mod discard;
+pub mod edit_mode;
 pub mod forge;
 pub mod land;
 pub mod r#move;

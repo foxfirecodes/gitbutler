@@ -23,6 +23,8 @@ mod diff;
 #[cfg(feature = "legacy")]
 mod discard;
 #[cfg(feature = "legacy")]
+mod edit_mode;
+#[cfg(feature = "legacy")]
 mod expand;
 #[cfg(unix)]
 mod external;

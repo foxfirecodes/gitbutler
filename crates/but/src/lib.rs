@@ -837,6 +837,7 @@ async fn match_subcommand(
         | Subcommands::Discard(..)
         | Subcommands::Pr(..)
         | Subcommands::Resolve { .. }
+        | Subcommands::EditMode { .. }
         | Subcommands::Uncommit(..)
         | Subcommands::Amend(..)
         | Subcommands::Pick(..)
@@ -1577,6 +1578,13 @@ async fn match_subcommand(
                 );
             }
             result
+                .emit_metrics(metrics_ctx)
+                .show_root_cause_error_then_exit_without_destructors(output)
+        }
+        #[cfg(feature = "legacy")]
+        Subcommands::EditMode { cmd, commit } => {
+            command::legacy::edit_mode::handle(&mut ctx, out, cmd, commit)
+                .context("Failed to handle edit mode.")
                 .emit_metrics(metrics_ctx)
                 .show_root_cause_error_then_exit_without_destructors(output)
         }

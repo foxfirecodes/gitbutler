@@ -566,7 +566,7 @@ fn finish_resolution(ctx: &mut Context, out: &mut OutputChannel) -> Result<()> {
     // Report the complete remaining resolution state. Descendant commits that
     // were already conflicted before this resolution are just as actionable as
     // conflicts introduced by the rebase.
-    report_conflicts_after_rebase(ctx, out, conflicts_before)?;
+    check_for_new_conflicts_after_rebase(ctx, out, conflicts_before)?;
 
     Ok(())
 }
@@ -1262,7 +1262,7 @@ pub(crate) struct ConflictedCommit {
 
 /// Report every conflicted commit left after the rebase, highlighting any that
 /// were newly introduced.
-fn report_conflicts_after_rebase(
+pub(crate) fn check_for_new_conflicts_after_rebase(
     ctx: &mut Context,
     out: &mut OutputChannel,
     conflicts_before: BTreeMap<String, Vec<ConflictedCommit>>,
