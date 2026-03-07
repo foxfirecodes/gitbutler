@@ -5,7 +5,7 @@ pub(crate) mod function {
     use but_core::DiffSpec;
     use but_rebase::graph_rebase::{Editor, Selector, Step, SuccessfulRebase, ToCommitSelector};
 
-    use crate::commit_engine::{Destination, create_commit};
+    use crate::commit_engine::{Destination, create_commit, create_commit_with_tree};
 
     /// The result of amending a commit in the graph rebase editor.
     #[derive(Debug)]
@@ -43,6 +43,7 @@ pub(crate) mod function {
         commit: impl ToCommitSelector,
         changes: Vec<DiffSpec>,
         context_lines: u32,
+        override_tree: Option<gix::ObjectId>,
     ) -> Result<CommitAmendOutcome> {
         let (target_selector, target) = editor.find_selectable_commit(commit)?;
 
@@ -50,15 +51,16 @@ pub(crate) mod function {
             bail!("Cannot amend a conflicted commit")
         }
 
-        let create_out = create_commit(
-            editor.repo(),
-            Destination::AmendCommit {
-                commit_id: target.id.into(),
-                new_message: None,
-            },
-            changes,
-            context_lines,
-        )?;
+        let destination = Destination::AmendCommit {
+            commit_id: target.id.into(),
+            new_message: None,
+        };
+
+        let create_out = if let Some(tree) = override_tree {
+            create_commit_with_tree(editor.repo(), destination, changes, context_lines, tree)
+        } else {
+            create_commit(editor.repo(), destination, changes, context_lines)
+        }?;
 
         let Some(new_commit_id) = create_out.new_commit else {
             return Ok(CommitAmendOutcome {

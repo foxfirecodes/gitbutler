@@ -61,6 +61,13 @@ export type CreateCommitRequest = {
 	parentId: string | undefined;
 	stackBranchName: string;
 	worktreeChanges: DiffSpec[];
+	/**
+	 * Hex OID of the post-hook index tree returned by `pre_commit_hook_diffspecs`.
+	 * When set, the commit engine uses this tree directly instead of re-applying
+	 * `worktreeChanges` from the worktree.  Required to correctly handle partial
+	 * file staging performed by pre-commit hooks.
+	 */
+	overrideTree?: string;
 };
 
 export type CreateCommitRequestWorktreeChanges = DiffSpec;
@@ -1215,6 +1222,7 @@ function injectEndpoints(api: ClientState["backendApi"], uiState: UiState) {
 						side,
 						changes: args.worktreeChanges,
 						message: args.message,
+						overrideTree: args.overrideTree,
 					};
 				},
 				invalidatesTags: [
@@ -1345,16 +1353,19 @@ function injectEndpoints(api: ClientState["backendApi"], uiState: UiState) {
 					projectId: string;
 					commitId: string;
 					worktreeChanges: DiffSpec[];
+					/** Hex OID of post-hook tree; when set, used directly as the amended commit tree. */
+					overrideTree?: string;
 				}
 			>({
 				extraOptions: {
 					command: "commit_amend",
 					actionName: "Amend Commit",
 				},
-				query: ({ projectId, commitId, worktreeChanges }) => ({
+				query: ({ projectId, commitId, worktreeChanges, overrideTree }) => ({
 					projectId,
 					commitId,
 					changes: worktreeChanges,
+					overrideTree,
 				}),
 				transformResponse: (response: CreateCommitOutcome) => {
 					if (response.newCommit) {

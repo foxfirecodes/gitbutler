@@ -1192,6 +1192,74 @@ fn signatures_are_redone() -> anyhow::Result<()> {
 }
 
 #[test]
+fn with_override_tree_bypasses_worktree() -> anyhow::Result<()> {
+    // Use a scenario with an untracked file so we can make a first commit,
+    // then verify that `create_commit_with_tree` ignores worktree changes.
+    let (repo, _tmp) = writable_scenario("unborn-untracked");
+
+    // --- First commit: commit the untracked file normally ---
+    let first_outcome = commit_whole_files_and_all_hunks_from_workspace(
+        &repo,
+        Destination::NewCommit {
+            parent_commit_id: None,
+            message: "initial commit".into(),
+            stack_segment: None,
+        },
+    )?;
+    let first_commit_id = first_outcome.new_commit.expect("first commit created");
+    let head_tree_id = first_commit_id
+        .attach(&repo)
+        .object()?
+        .peel_to_commit()?
+        .tree_id()?
+        .detach();
+
+    // --- Modify the worktree (simulating user edits that are NOT staged) ---
+    std::fs::write(
+        repo.workdir_path("not-yet-tracked").expect("non-bare"),
+        "WORKTREE MODIFICATION - must not appear in override-tree commit",
+    )?;
+
+    // --- Call create_commit_with_tree with the HEAD tree as override ---
+    // Even though the worktree has new content, the committed tree must
+    // match `override_tree` exactly — worktree reading is bypassed entirely.
+    let outcome = commit_engine::create_commit_with_tree(
+        &repo,
+        Destination::NewCommit {
+            parent_commit_id: Some(first_commit_id),
+            message: "commit using override tree".into(),
+            stack_segment: None,
+        },
+        // Pass empty changes — they must be ignored when override_tree is set.
+        vec![],
+        CONTEXT_LINES,
+        head_tree_id,
+    )?;
+
+    let new_commit_id = outcome.new_commit.expect("commit was created with override tree");
+    let committed_tree_id = new_commit_id
+        .attach(&repo)
+        .object()?
+        .peel_to_commit()?
+        .tree_id()?
+        .detach();
+
+    assert_eq!(
+        committed_tree_id, head_tree_id,
+        "create_commit_with_tree must use the override_tree, not read from the worktree"
+    );
+
+    // Verify the tree contains the original committed content, not the worktree modification.
+    let tree = visualize_tree(&repo, &outcome)?;
+    insta::assert_snapshot!(tree, @r#"
+    861d6e2
+    └── not-yet-tracked:100644:d95f3ad "content\n"
+    "#);
+
+    Ok(())
+}
+
+#[test]
 fn validate_no_change_on_noop() -> anyhow::Result<()> {
     let repo = read_only_in_memory_scenario("two-commits-with-line-offset")?;
     let specs = vec![DiffSpec {

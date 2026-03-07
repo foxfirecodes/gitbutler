@@ -8,7 +8,7 @@ use but_oxidize::ObjectIdExt;
 use gitbutler_branch_actions::hooks;
 use gitbutler_repo::{
     FileInfo, RepoCommands,
-    hooks::{HookResult, MessageHookResult},
+    hooks::{HookResult, MessageHookResult, PreCommitHookDiffspecsResult},
 };
 use gitbutler_repo_actions::askpass;
 use tracing::instrument;
@@ -89,7 +89,7 @@ pub fn get_blob_file(
 pub fn pre_commit_hook_diffspecs(
     ctx: &but_ctx::Context,
     changes: Vec<DiffSpec>,
-) -> Result<HookResult> {
+) -> Result<PreCommitHookDiffspecsResult> {
     let repo = ctx.repo.get()?;
     let head = repo
         .head_tree_id_or_empty()
@@ -97,12 +97,37 @@ pub fn pre_commit_hook_diffspecs(
 
     let context_lines = ctx.settings.context_lines;
 
-    let mut changes = changes.into_iter().map(Ok).collect::<Vec<_>>();
+    let mut changes_for_tree = changes.into_iter().map(Ok).collect::<Vec<_>>();
 
-    let (new_tree, ..) =
-        but_core::tree::apply_worktree_changes(head.detach(), &repo, &mut changes, context_lines)?;
+    let (new_tree, ..) = but_core::tree::apply_worktree_changes(
+        head.detach(),
+        &repo,
+        &mut changes_for_tree,
+        context_lines,
+    )?;
 
-    hooks::pre_commit_with_tree(ctx, new_tree.to_git2())
+    let new_tree_git2 = new_tree.to_git2();
+    let (hook_result, post_hook_tree) = hooks::pre_commit_with_tree(ctx, new_tree_git2)?;
+
+    // When the hook modifies the index (including partial file staging), we must
+    // return the post-hook tree OID rather than recomputed DiffSpecs.  Using
+    // DiffSpecs with empty `hunk_headers` would cause `apply_worktree_changes`
+    // to read the whole worktree file, silently discarding any partial staging
+    // the hook performed.
+    let post_hook_tree_hex =
+        if matches!(hook_result, HookResult::Success) && post_hook_tree != new_tree_git2 {
+            Some(post_hook_tree.to_string())
+        } else {
+            None
+        };
+
+    Ok(match hook_result {
+        HookResult::Success => PreCommitHookDiffspecsResult::Success {
+            post_hook_tree: post_hook_tree_hex,
+        },
+        HookResult::NotConfigured => PreCommitHookDiffspecsResult::NotConfigured,
+        HookResult::Failure(err) => PreCommitHookDiffspecsResult::Failure(err),
+    })
 }
 #[but_api]
 #[instrument(err(Debug))]

@@ -47,6 +47,7 @@ name = "repo"
 path = "tests/mod.rs"
 
 [dev-dependencies]
+but-ctx.workspace = true
 gitbutler-testsupport.workspace = true
 gitbutler-user.workspace = true
 but-settings.workspace = true

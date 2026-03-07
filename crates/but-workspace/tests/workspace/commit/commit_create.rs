@@ -35,6 +35,7 @@ fn commit_above_commit() -> Result<()> {
         InsertSide::Above,
         "insert above commit",
         0,
+        None,
     )?;
 
     assert!(outcome.rejected_specs.is_empty());
@@ -81,6 +82,7 @@ fn commit_below_commit() -> Result<()> {
         InsertSide::Below,
         "insert below commit",
         0,
+        None,
     )?;
 
     assert!(outcome.rejected_specs.is_empty());
@@ -121,6 +123,7 @@ fn commit_above_reference() -> Result<()> {
         InsertSide::Above,
         "insert above reference",
         0,
+        None,
     )?;
 
     assert!(outcome.rejected_specs.is_empty());
@@ -172,6 +175,7 @@ fn commit_below_merge_commit_uses_first_parent() -> Result<()> {
         InsertSide::Below,
         "insert below merge",
         0,
+        None,
     )?;
 
     assert!(outcome.rejected_specs.is_empty());
@@ -214,6 +218,7 @@ fn commit_all_rejected_is_noop() -> Result<()> {
         InsertSide::Above,
         "no-op commit",
         0,
+        None,
     )?;
 
     assert!(

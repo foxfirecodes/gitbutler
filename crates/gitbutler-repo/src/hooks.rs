@@ -31,6 +31,35 @@ pub enum HookResult {
     Failure(ErrorData),
 }
 
+/// Result of the pre-commit diffspec hook, which may also carry the post-hook
+/// tree when the hook staged additional changes (including partial file staging).
+#[derive(Serialize, PartialEq, Debug, Clone)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum PreCommitHookDiffspecsResult {
+    /// The hook passed.
+    ///
+    /// `post_hook_tree` is `Some(hex_oid)` when the hook modified the git index
+    /// (e.g. by running `git add` or `git add -p`).  Callers **must** use this
+    /// tree directly when creating the commit instead of re-applying their
+    /// original `DiffSpec`s from the worktree — otherwise partial staging (where
+    /// the hook only staged a portion of a file's changes) would be silently
+    /// discarded.
+    ///
+    /// `post_hook_tree` is `None` when the hook ran successfully but left the
+    /// index unchanged; callers should proceed with their original DiffSpecs.
+    Success {
+        #[serde(
+            rename = "postHookTree",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        post_hook_tree: Option<String>,
+    },
+    /// No hook was configured, so no hook ran and the index is unchanged.
+    NotConfigured,
+    Failure(ErrorData),
+}
+
 /// Message hook result indicating either success, message, or failure.
 ///
 /// A message hook can optionally mutate the message, so this special type is
@@ -76,7 +105,13 @@ pub fn commit_msg(ctx: &Context, mut message: String) -> Result<MessageHookResul
     }
 }
 
-pub fn pre_commit_with_tree(ctx: &Context, tree_id: git2::Oid) -> Result<HookResult> {
+/// Run the pre-commit hook with the given tree, and return both the hook result and the tree OID
+/// that the index was left in after the hook ran (before the index is reset).
+///
+/// If the hook staged additional changes (e.g. by running `git add`), the returned tree OID
+/// will differ from the input `tree_id`, allowing callers to detect and include those changes
+/// in the commit.
+pub fn pre_commit_with_tree(ctx: &Context, tree_id: git2::Oid) -> Result<(HookResult, git2::Oid)> {
     let repo = &*ctx.git2_repo.get()?;
     let original_tree = repo.index()?.write_tree()?;
 
@@ -92,7 +127,7 @@ pub fn pre_commit_with_tree(ctx: &Context, tree_id: git2::Oid) -> Result<HookRes
     index.read_tree(&repo.find_tree(tree_id)?)?;
     index.write()?;
 
-    Ok(
+    let hook_result =
         match git2_hooks::hooks_pre_commit(&*ctx.git2_repo.get()?, husky_search_paths(ctx))? {
             H::Ok { hook: _ } => HookResult::Success,
             H::NoHookFound => HookResult::NotConfigured,
@@ -111,8 +146,18 @@ pub fn pre_commit_with_tree(ctx: &Context, tree_id: git2::Oid) -> Result<HookRes
                     HookResult::Failure(ErrorData { error })
                 }
             }
-        },
-    )
+        };
+
+    // Capture the post-hook index state before the guard resets it.
+    // This lets callers detect if the hook staged new changes.
+    let post_hook_tree = {
+        let mut current_index = repo.index()?;
+        // Reload from disk in case the hook wrote changes directly to the index file.
+        current_index.read(true)?;
+        current_index.write_tree()?
+    };
+
+    Ok((hook_result, post_hook_tree))
 }
 
 pub fn post_commit(ctx: &Context) -> Result<HookResult> {

@@ -9,7 +9,7 @@ use but_api::{
 use but_core::{DiffSpec, ui::TreeChange};
 use but_rebase::graph_rebase::mutate::InsertSide;
 use colored::Colorize;
-use gitbutler_repo::hooks;
+use gitbutler_repo::hooks::{self, PreCommitHookDiffspecsResult};
 
 use crate::{
     CliId, IdMap,
@@ -364,20 +364,31 @@ pub(crate) fn commit(
     // Run pre-commit hook unless --no-hooks was specified
     // This runs BEFORE getting the commit message so the user doesn't waste time writing a message
     // for a commit that will fail the hook
-    if !no_hooks {
+    let override_tree = if !no_hooks {
         let hook_result = repo::pre_commit_hook_diffspecs(ctx, diff_specs.clone())?;
         match hook_result {
-            hooks::HookResult::Success | hooks::HookResult::NotConfigured => {
-                // Hook passed or not configured, proceed with commit
+            PreCommitHookDiffspecsResult::Success { post_hook_tree } => {
+                // When the hook modified the index (including partial staging), we must use
+                // the post-hook tree directly to avoid re-reading the full worktree file.
+                post_hook_tree
+                    .map(|hex| hex.parse::<gix::ObjectId>())
+                    .transpose()
+                    .context("invalid post-hook tree OID returned by pre-commit hook")?
             }
-            hooks::HookResult::Failure(error_data) => {
+            PreCommitHookDiffspecsResult::NotConfigured => {
+                // No hook configured, index is unchanged.
+                None
+            }
+            PreCommitHookDiffspecsResult::Failure(error_data) => {
                 bail!(
                     "pre-commit hook failed:\n{}\n\nTo bypass the hook, run: but commit --no-hooks",
                     error_data.error
                 );
             }
         }
-    }
+    } else {
+        None
+    };
 
     // Get commit message
     let commit_message = if let Some(user_summary) = generate_message {
@@ -465,6 +476,7 @@ pub(crate) fn commit(
         InsertSide::Below,
         diff_specs,
         final_commit_message,
+        override_tree,
     )?;
 
     if !outcome.rejected_specs.is_empty() {

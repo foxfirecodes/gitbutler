@@ -7,7 +7,7 @@ pub(crate) mod function {
         Editor, LookupStep, Pick, Selector, Step, SuccessfulRebase, ToSelector, mutate::InsertSide,
     };
 
-    use crate::commit_engine::{Destination, create_commit};
+    use crate::commit_engine::{Destination, create_commit, create_commit_with_tree};
 
     /// The result of creating and inserting a new commit in the graph rebase editor.
     #[derive(Debug)]
@@ -51,6 +51,7 @@ pub(crate) mod function {
         side: InsertSide,
         message: &str,
         context_lines: u32,
+        override_tree: Option<gix::ObjectId>,
     ) -> Result<CommitCreateOutcome> {
         let relative_to_selector = relative_to.to_selector(&editor)?;
         let parent_commit_id = parent_commit_id_for_new_commit(
@@ -59,16 +60,17 @@ pub(crate) mod function {
             side,
         )?;
 
-        let create_out = create_commit(
-            editor.repo(),
-            Destination::NewCommit {
-                parent_commit_id,
-                stack_segment: None,
-                message: message.to_owned(),
-            },
-            changes,
-            context_lines,
-        )?;
+        let destination = Destination::NewCommit {
+            parent_commit_id,
+            stack_segment: None,
+            message: message.to_owned(),
+        };
+
+        let create_out = if let Some(tree) = override_tree {
+            create_commit_with_tree(editor.repo(), destination, changes, context_lines, tree)
+        } else {
+            create_commit(editor.repo(), destination, changes, context_lines)
+        }?;
 
         let Some(new_commit_id) = create_out.new_commit else {
             return Ok(CommitCreateOutcome {

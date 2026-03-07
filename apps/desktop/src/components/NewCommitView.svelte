@@ -111,8 +111,13 @@
 				isRichTextMode,
 			});
 
+			// Run pre-commit hooks. When the hook modifies the index (including via
+			// partial file staging), we receive the post-hook tree OID and must pass
+			// it as `overrideTree` so the commit engine uses the tree directly
+			// instead of re-reading worktree files (which would discard partial staging).
+			let overrideTree: string | undefined;
 			if ($runCommitHooks) {
-				await hooksService.runPreCommitHooks(projectId, worktreeChanges);
+				overrideTree = await hooksService.runPreCommitHooks(projectId, worktreeChanges);
 			}
 
 			const response = await createCommitInStack(
@@ -123,6 +128,7 @@
 					message: finalMessage,
 					stackBranchName: finalBranchName,
 					worktreeChanges,
+					overrideTree,
 				},
 				{ properties: analyticsProperties },
 			);

@@ -189,6 +189,7 @@ pub fn commit_create_only(
     side: InsertSide,
     changes: Vec<DiffSpec>,
     message: String,
+    override_tree: Option<gix::ObjectId>,
 ) -> anyhow::Result<CommitCreateResult> {
     let context_lines = ctx.settings.context_lines;
     let mut guard = ctx.exclusive_worktree_access();
@@ -199,6 +200,7 @@ pub fn commit_create_only(
         changes,
         message,
         context_lines,
+        override_tree,
         guard.write_permission(),
     )
 }
@@ -211,6 +213,7 @@ pub(crate) fn commit_create_only_impl(
     changes: Vec<DiffSpec>,
     message: String,
     context_lines: u32,
+    override_tree: Option<gix::ObjectId>,
     perm: &mut RepoExclusive,
 ) -> anyhow::Result<CommitCreateResult> {
     let meta = ctx.meta()?;
@@ -229,6 +232,7 @@ pub(crate) fn commit_create_only_impl(
         side,
         &message,
         context_lines,
+        override_tree,
     )?;
 
     let new_commit = match commit_selector {
@@ -256,6 +260,7 @@ pub fn commit_create(
     side: InsertSide,
     changes: Vec<DiffSpec>,
     message: String,
+    override_tree: Option<gix::ObjectId>,
 ) -> anyhow::Result<CommitCreateResult> {
     let context_lines = ctx.settings.context_lines;
     let maybe_oplog_entry = but_oplog::UnmaterializedOplogSnapshot::from_details(
@@ -272,6 +277,7 @@ pub fn commit_create(
         changes,
         message,
         context_lines,
+        override_tree,
         guard.write_permission(),
     );
     if let Some(snapshot) = maybe_oplog_entry.filter(|_| res.is_ok()) {
@@ -287,6 +293,7 @@ pub fn commit_amend_only(
     ctx: &mut but_ctx::Context,
     commit_id: gix::ObjectId,
     changes: Vec<DiffSpec>,
+    override_tree: Option<gix::ObjectId>,
 ) -> anyhow::Result<CommitCreateResult> {
     let context_lines = ctx.settings.context_lines;
     let mut guard = ctx.exclusive_worktree_access();
@@ -295,6 +302,7 @@ pub fn commit_amend_only(
         commit_id,
         changes,
         context_lines,
+        override_tree,
         guard.write_permission(),
     )
 }
@@ -305,6 +313,7 @@ pub(crate) fn commit_amend_only_impl(
     commit_id: gix::ObjectId,
     changes: Vec<DiffSpec>,
     context_lines: u32,
+    override_tree: Option<gix::ObjectId>,
     perm: &mut RepoExclusive,
 ) -> anyhow::Result<CommitCreateResult> {
     let meta = ctx.meta()?;
@@ -315,7 +324,7 @@ pub(crate) fn commit_amend_only_impl(
         rebase,
         commit_selector,
         rejected_specs,
-    } = but_workspace::commit::commit_amend(editor, commit_id, changes, context_lines)?;
+    } = but_workspace::commit::commit_amend(editor, commit_id, changes, context_lines, override_tree)?;
 
     let new_commit = match commit_selector {
         Some(commit_selector) => {
@@ -340,6 +349,7 @@ pub fn commit_amend(
     ctx: &mut but_ctx::Context,
     commit_id: gix::ObjectId,
     changes: Vec<DiffSpec>,
+    override_tree: Option<gix::ObjectId>,
 ) -> anyhow::Result<CommitCreateResult> {
     let context_lines = ctx.settings.context_lines;
     let maybe_oplog_entry = but_oplog::UnmaterializedOplogSnapshot::from_details(
@@ -354,6 +364,7 @@ pub fn commit_amend(
         commit_id,
         changes,
         context_lines,
+        override_tree,
         guard.write_permission(),
     );
     if let Some(snapshot) = maybe_oplog_entry.filter(|_| res.is_ok()) {

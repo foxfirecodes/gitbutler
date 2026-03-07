@@ -134,8 +134,15 @@ export class AmendCommitWithChangeDzHandler implements DropzoneHandler {
 				const assignments = data.assignments();
 				const worktreeChanges = changesToDiffSpec(await data.treeChanges(), assignments);
 
+				// Run pre-commit hooks. When the hook modifies the index (including via
+				// partial file staging), receive the post-hook tree OID and pass it as
+				// `overrideTree` so the commit engine uses the tree directly.
+				let overrideTree: string | undefined;
 				if (this.runHooks) {
-					await this.hooksService.runPreCommitHooks(this.projectId, worktreeChanges);
+					overrideTree = await this.hooksService.runPreCommitHooks(
+						this.projectId,
+						worktreeChanges,
+					);
 				}
 
 				this.onresult(
@@ -143,7 +150,8 @@ export class AmendCommitWithChangeDzHandler implements DropzoneHandler {
 						projectId: this.projectId,
 						stackId: this.stackId,
 						commitId: this.commit.id,
-						worktreeChanges: worktreeChanges,
+						worktreeChanges,
+						overrideTree,
 					}),
 				);
 
@@ -331,9 +339,16 @@ export class AmendCommitWithHunkDzHandler implements DropzoneHandler {
 				},
 			];
 
+			// Run pre-commit hooks. When the hook modifies the index (including via
+			// partial file staging), receive the post-hook tree OID and pass it as
+			// `overrideTree` so the commit engine uses the tree directly.
+			let overrideTree: string | undefined;
 			if (runHooks) {
 				try {
-					await this.args.hooksService.runPreCommitHooks(projectId, worktreeChanges);
+					overrideTree = await this.args.hooksService.runPreCommitHooks(
+						projectId,
+						worktreeChanges,
+					);
 				} catch {
 					return;
 				}
@@ -343,6 +358,7 @@ export class AmendCommitWithHunkDzHandler implements DropzoneHandler {
 				stackId,
 				commitId: commit.id,
 				worktreeChanges,
+				overrideTree,
 			});
 			if (runHooks) {
 				try {
