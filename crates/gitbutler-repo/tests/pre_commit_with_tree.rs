@@ -209,6 +209,94 @@ printf 'line 1 CHANGED\nline 2\nline 3 CHANGED\n' > file.txt
     Ok(())
 }
 
+/// Verify that `pre_commit_with_tree` restores the git index to its original
+/// state after the hook runs, even when the hook staged new content.
+///
+/// This exercises the `scopeguard` that resets the index after every call so
+/// that pre-existing staged changes are never polluted by hook side-effects.
+#[test]
+#[cfg(unix)]
+fn pre_commit_with_tree_index_restored_after_hook() -> Result<()> {
+    let (ctx, _tmp, tree_oid) = setup_repo_with_commit("original\n")?;
+
+    // Stage a change in the index *before* calling pre_commit_with_tree.
+    // We want to confirm this staged state is preserved after the call.
+    let workdir = ctx.repo.get()?.workdir().unwrap().to_owned();
+    fs::write(workdir.join("file.txt"), "user staged change\n")?;
+    {
+        let repo = git2::Repository::open(&workdir)?;
+        let mut index = repo.index()?;
+        index.add_path(std::path::Path::new("file.txt"))?;
+        index.write()?;
+    }
+
+    // Capture the index tree *before* the hook runs.
+    let pre_call_index_tree = {
+        let repo = git2::Repository::open(&workdir)?;
+        repo.index()?.write_tree()?
+    };
+
+    // Install a hook that stages completely different content.
+    let repo = git2::Repository::open(&workdir)?;
+    install_hook(
+        &repo,
+        "pre-commit",
+        "#!/bin/sh\necho 'hook content' > file.txt\ngit add file.txt\n",
+    )?;
+
+    let (result, _post_hook_tree) = pre_commit_with_tree(&ctx, tree_oid)?;
+    assert_eq!(result, HookResult::Success);
+
+    // After the call the index must be back to the user's pre-call staged state.
+    let post_call_index_tree = {
+        let repo = git2::Repository::open(&workdir)?;
+        repo.index()?.write_tree()?
+    };
+
+    assert_eq!(
+        post_call_index_tree, pre_call_index_tree,
+        "pre_commit_with_tree must restore the original index state after running the hook"
+    );
+    Ok(())
+}
+
+/// When a hook stages a brand-new file (one that did not exist in the
+/// committed tree), the returned `post_hook_tree` must contain that new file.
+#[test]
+#[cfg(unix)]
+fn pre_commit_with_tree_hook_stages_new_file() -> Result<()> {
+    let (ctx, _tmp, tree_oid) = setup_repo_with_commit("existing content\n")?;
+
+    let workdir = ctx.repo.get()?.workdir().unwrap().to_owned();
+    let repo = git2::Repository::open(&workdir)?;
+    install_hook(
+        &repo,
+        "pre-commit",
+        "#!/bin/sh\nprintf 'new file content\\n' > added_by_hook.txt\ngit add added_by_hook.txt\n",
+    )?;
+
+    let (result, post_hook_tree) = pre_commit_with_tree(&ctx, tree_oid)?;
+
+    assert_eq!(result, HookResult::Success);
+    assert_ne!(
+        post_hook_tree, tree_oid,
+        "post-hook tree should differ when hook stages a new file"
+    );
+
+    let git2_repo = ctx.git2_repo.get()?;
+    let post_tree = git2_repo.find_tree(post_hook_tree)?;
+    assert!(
+        post_tree.get_name("added_by_hook.txt").is_some(),
+        "post-hook tree must contain the new file staged by the hook"
+    );
+    // Original file must also still be present.
+    assert!(
+        post_tree.get_name("file.txt").is_some(),
+        "original file must still be present in post-hook tree"
+    );
+    Ok(())
+}
+
 /// When the hook exits with a non-zero status the function must return
 /// `HookResult::Failure` and the post-hook tree must still equal the input
 /// tree (since a failing hook should not affect what gets committed).

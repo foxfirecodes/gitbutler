@@ -24,7 +24,7 @@ fn amend_commit_smoke_test() -> Result<()> {
     )?;
 
     let editor = graph.to_editor(&repo)?;
-    let outcome = commit_amend(editor, two_id, worktree_changes_as_specs(&repo)?, 0)?;
+    let outcome = commit_amend(editor, two_id, worktree_changes_as_specs(&repo)?, 0, None)?;
 
     assert!(outcome.rejected_specs.is_empty());
     let selector = outcome.commit_selector.expect("selector exists");
