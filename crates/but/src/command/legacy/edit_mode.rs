@@ -12,7 +12,12 @@ use colored::Colorize;
 use gitbutler_edit_mode::commands::changes_from_initial;
 use gitbutler_operating_modes::OperatingMode;
 
-use crate::{IdMap, args::edit_mode::Subcommands, id::CliId, utils::OutputChannel};
+use crate::{
+    IdMap,
+    args::edit_mode::Subcommands,
+    id::{CliId, CommitId},
+    utils::OutputChannel,
+};
 
 fn current_operating_mode(ctx: &mut Context) -> Result<OperatingMode> {
     Ok(but_api::legacy::modes::operating_mode(ctx)?.operating_mode)
@@ -47,7 +52,7 @@ pub(crate) fn handle(
 fn enter_edit(ctx: &mut Context, out: &mut OutputChannel, commit_id_str: &str) -> Result<()> {
     use gix::{prelude::ObjectIdExt as _, revision::walk::Sorting};
 
-    let id_map = IdMap::new_from_context(ctx, None)?;
+    let id_map = IdMap::legacy_new_from_context(ctx)?;
     let matches = id_map.parse_using_context(commit_id_str, ctx)?;
 
     if matches.is_empty() {
@@ -63,7 +68,10 @@ fn enter_edit(ctx: &mut Context, out: &mut OutputChannel, commit_id_str: &str) -
     }
 
     let commit_gix_oid = match &matches[0] {
-        CliId::Commit { commit_id, .. } => *commit_id,
+        CliId::Commit {
+            commit: CommitId { commit_id, .. },
+            id: _,
+        } => *commit_id,
         _ => bail!("'{commit_id_str}' does not refer to a commit"),
     };
 
@@ -144,7 +152,10 @@ fn show_status_impl(ctx: &mut Context, out: &mut OutputChannel) -> Result<()> {
 }
 
 fn show_changed_files(ctx: &mut Context, out: &mut OutputChannel) -> Result<()> {
-    let changes = changes_from_initial(ctx)?;
+    let changes = {
+        let guard = ctx.shared_worktree_access();
+        changes_from_initial(ctx, guard.read_permission())?
+    };
     let mut progress = out.progress_channel();
 
     if changes.is_empty() {
@@ -205,7 +216,10 @@ fn cancel_edit(ctx: &mut Context, out: &mut OutputChannel, force: bool) -> Resul
         return show_workflow_help(out);
     }
 
-    if !force && !changes_from_initial(ctx)?.is_empty() {
+    if !force && {
+        let guard = ctx.shared_worktree_access();
+        !changes_from_initial(ctx, guard.read_permission())?.is_empty()
+    } {
         bail!(
             "There are changes that differ from the original commit you were editing. Canceling will drop those changes.\n\nIf you want to go through with this, please re-run with `--force`.\n\nIf you want to keep the changes you have made, consider finishing the edit with `but edit-mode finish`."
         )
