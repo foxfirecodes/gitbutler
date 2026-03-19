@@ -61,6 +61,8 @@
 	const [insertBlankCommitInBranch, commitInsertion] = stackService.insertBlankCommit.useMutation();
 	const [updateBranchNameMutation] = stackService.updateBranchName;
 	const [createRef, refCreation] = stackService.createReference;
+	const [resetBranchToRemoteMutation, resettingToRemote] =
+		stackService.resetBranchToRemote;
 
 	// Component is read-only when stackId is undefined
 	const isReadOnly = $derived(!stackId);
@@ -235,6 +237,21 @@
 							close();
 						}}
 						disabled={isReadOnly || isConflicted}
+					/>
+				{/if}
+				{#if branch.remoteTrackingBranch}
+					<ContextMenuItem
+						label="Reset to remote"
+						icon="undo"
+						onclick={async () => {
+							await resetBranchToRemoteMutation({
+								projectId,
+								stackId,
+								branchName,
+							});
+							close();
+						}}
+						disabled={isReadOnly || resettingToRemote.current.isLoading}
 					/>
 				{/if}
 			</ContextMenuSection>

@@ -24,7 +24,7 @@ pub fn writable_context(script_name: &str, repo_name: &str) -> Result<(Context, 
     let (tmp, _) = gix_testtools::scripted_fixture_writable_with_args_with_post(
         script_name.clone(),
         None::<String>,
-        if script_name == "reorder.sh" {
+        if script_name == "reorder.sh" || script_name == "reset-branch.sh" {
             gix_testtools::Creation::Execute
         } else {
             gix_testtools::Creation::CopyFromReadOnly
@@ -149,6 +149,31 @@ fn seed_fixture(repo: &gix::Repository, script_name: &str, repo_name: &str) -> R
         ("for-details.sh", "complex-repo") => vec![StackSpec {
             id: 1,
             branches_base_to_top: &["a-branch-1"],
+            in_workspace: true,
+        }],
+        ("reset-branch.sh", "single-branch") => vec![StackSpec {
+            id: 1,
+            branches_base_to_top: &["my_stack"],
+            in_workspace: true,
+        }],
+        ("reset-branch.sh", "single-branch-diverged") => vec![StackSpec {
+            id: 1,
+            branches_base_to_top: &["my_stack"],
+            in_workspace: true,
+        }],
+        ("reset-branch.sh", "stacked-branches") => vec![StackSpec {
+            id: 1,
+            branches_base_to_top: &["my_stack", "a-branch-2"],
+            in_workspace: true,
+        }],
+        ("reset-branch.sh", "stacked-branches-base-diverged") => vec![StackSpec {
+            id: 1,
+            branches_base_to_top: &["my_stack", "a-branch-2"],
+            in_workspace: true,
+        }],
+        ("reset-branch.sh", "stacked-three-branches") => vec![StackSpec {
+            id: 1,
+            branches_base_to_top: &["my_stack", "a-branch-2", "a-branch-3"],
             in_workspace: true,
         }],
         unsupported => anyhow::bail!("unsupported driverless fixture {unsupported:?}"),

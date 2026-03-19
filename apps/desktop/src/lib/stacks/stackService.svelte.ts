@@ -815,6 +815,10 @@ export class StackService {
 		return this.api.endpoints.integrateBranchWithSteps.useMutation();
 	}
 
+	get resetBranchToRemote() {
+		return this.api.endpoints.resetBranchToRemote.useMutation();
+	}
+
 	get createVirtualBranchFromBranch() {
 		return this.api.endpoints.createVirtualBranchFromBranch.mutate;
 	}
@@ -1756,6 +1760,25 @@ function injectEndpoints(api: BackendApi, uiState: UiState) {
 					invalidatesItem(ReduxTag.StackDetails, args.stackId),
 					invalidatesItem(ReduxTag.IntegrationSteps, args.stackId + args.branchName),
 					invalidatesItem(ReduxTag.BranchDetails, args.branchName),
+					invalidatesItem(ReduxTag.BranchChanges, args.stackId),
+				],
+			}),
+			resetBranchToRemote: build.mutation<
+				void,
+				{
+					projectId: string;
+					stackId: string;
+					branchName: string;
+				}
+			>({
+				extraOptions: {
+					command: "reset_branch_to_remote",
+					actionName: "Reset Branch to Remote",
+				},
+				query: (args) => args,
+				invalidatesTags: (_result, _error, args) => [
+					invalidatesList(ReduxTag.HeadSha),
+					invalidatesList(ReduxTag.WorktreeChanges),
 					invalidatesItem(ReduxTag.BranchChanges, args.stackId),
 				],
 			}),

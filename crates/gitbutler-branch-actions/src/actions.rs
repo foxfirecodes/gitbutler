@@ -171,6 +171,27 @@ pub fn integrate_branch_with_steps(
     )
 }
 
+pub fn reset_branch_to_remote(
+    ctx: &mut Context,
+    stack_id: StackId,
+    branch_name: String,
+) -> Result<()> {
+    let mut guard = ctx.exclusive_worktree_access();
+    ctx.verify(guard.write_permission())?;
+    ensure_open_workspace_mode(ctx, guard.read_permission())
+        .context("Resetting a branch to remote requires open workspace mode")?;
+    let _ = ctx.create_snapshot(
+        SnapshotDetails::new(OperationKind::ResetBranchToRemote),
+        guard.write_permission(),
+    );
+    crate::reset_branch::reset_branch_to_remote(
+        ctx,
+        stack_id,
+        branch_name,
+        guard.write_permission(),
+    )
+}
+
 pub fn update_stack_order(ctx: &mut Context, updates: Vec<BranchUpdateRequest>) -> Result<()> {
     let mut guard = ctx.exclusive_worktree_access();
     ctx.verify(guard.write_permission())?;

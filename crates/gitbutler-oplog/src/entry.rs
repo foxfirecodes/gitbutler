@@ -165,6 +165,7 @@ pub enum OperationKind {
     AutoHandleChangesBefore,
     AutoHandleChangesAfter,
     SplitBranch,
+    ResetBranchToRemote,
     OnDemandSnapshot,
     #[default]
     Unknown,

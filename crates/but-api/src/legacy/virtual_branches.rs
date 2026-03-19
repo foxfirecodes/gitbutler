@@ -163,6 +163,16 @@ pub fn integrate_branch_with_steps(
 
 #[but_api]
 #[instrument(err(Debug))]
+pub fn reset_branch_to_remote(
+    ctx: &mut but_ctx::Context,
+    stack_id: StackId,
+    branch_name: String,
+) -> Result<()> {
+    gitbutler_branch_actions::reset_branch_to_remote(ctx, stack_id, branch_name)
+}
+
+#[but_api]
+#[instrument(err(Debug))]
 pub fn switch_back_to_workspace(ctx: &mut but_ctx::Context) -> Result<BaseBranch> {
     let mut guard = ctx.exclusive_worktree_access();
     switch_back_to_workspace_with_perm(ctx, guard.write_permission())
