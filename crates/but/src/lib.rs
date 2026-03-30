@@ -1208,6 +1208,7 @@ async fn match_subcommand(
             file_or_hunk,
             branch_pos,
             branch,
+            patch,
         } => {
             let status_after = args.status_after;
             let mut ctx = setup::init_ctx(
@@ -1219,9 +1220,20 @@ async fn match_subcommand(
                 out,
             )?;
             out.begin_status_after(status_after);
-            let result = if let Some(file_or_hunk) = file_or_hunk {
+            let result = if patch {
+                // Patch mode: but stage -p [--branch <branch>]
+                use std::io::IsTerminal;
+                if !std::io::stdout().is_terminal() {
+                    anyhow::bail!(
+                        "Patch mode requires a terminal. Use: but stage <file_or_hunk> <branch>"
+                    );
+                }
+                command::legacy::rub::handle_stage_patch(&mut ctx, out, branch.as_deref())
+                    .context("Failed to stage.")
+                    .emit_metrics(metrics_ctx)
+            } else if let Some(file_or_hunk) = file_or_hunk {
                 // Direct mode: but stage <file_or_hunk> <branch>
-                let branch = branch.or(branch_pos).ok_or_else(|| {
+                let branch = branch.or(branch_pos.clone()).ok_or_else(|| {
                     anyhow::anyhow!("Missing required argument: <branch>. Usage: but stage <file_or_hunk> <branch>")
                 })?;
                 command::legacy::rub::handle_stage(&mut ctx, out, &file_or_hunk, &branch)

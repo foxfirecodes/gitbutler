@@ -1011,6 +1011,8 @@ pub enum Subcommands {
     ///   `but stage`                             (interactive TUI selector)
     ///   `but stage --branch <branch>`           (interactive, specific branch)
     ///   `but stage <file-or-hunk> <branch>`     (direct staging)
+    ///   `but stage -p`                          (interactive patch mode, hunk-by-hunk)
+    ///   `but stage -p --branch <branch>`        (patch mode, specific branch)
     #[cfg(feature = "legacy")]
     #[clap(verbatim_doc_comment)]
     Stage {
@@ -1021,6 +1023,9 @@ pub enum Subcommands {
         /// Branch to stage to (for interactive mode)
         #[clap(long = "branch", short = 'b')]
         branch: Option<String>,
+        /// Interactively select hunks to stage, one at a time (like `git add -p`)
+        #[clap(long = "patch", short = 'p')]
+        patch: bool,
     },
 
     /// Unstages a file or hunk from a branch.

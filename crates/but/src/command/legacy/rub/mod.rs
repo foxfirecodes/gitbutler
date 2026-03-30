@@ -1075,6 +1075,107 @@ pub(crate) fn handle_stage_tui(
     }
 }
 
+/// Handler for `but stage -p [--branch <branch>]` - interactive patch-mode staging.
+///
+/// Walks through all uncommitted hunks one at a time, prompting the user to
+/// stage or skip each hunk, similar to `git add -p`.
+pub(crate) fn handle_stage_patch(
+    ctx: &mut Context,
+    out: &mut OutputChannel,
+    branch_str: Option<&str>,
+) -> anyhow::Result<()> {
+    use crate::tui::patch_viewer::{PatchResult, run_patch_viewer};
+    use crate::tui::stage_viewer::StageFileEntry;
+
+    let id_map = IdMap::new_from_context(ctx, None)?;
+
+    // Resolve branch: same logic as handle_stage_tui
+    let branch_name = if let Some(branch_str) = branch_str {
+        let branch = resolve_single_id(ctx, &id_map, branch_str, "Branch", out)?;
+        match &branch {
+            CliId::Branch { name, .. } => name.clone(),
+            other => {
+                bail!(
+                    "Cannot stage to {} - it is {}. Target must be a branch.",
+                    other.to_short_string().blue().bold(),
+                    other.kind_for_humans().yellow()
+                );
+            }
+        }
+    } else {
+        let stacks = crate::legacy::commits::stacks(ctx)?;
+        let stack_top_branches: Vec<String> = stacks
+            .iter()
+            .filter_map(|s| s.heads.first().map(|h| h.name.to_string()))
+            .collect();
+
+        if stack_top_branches.is_empty() {
+            let branch_name = but_api::legacy::workspace::canned_branch_name(ctx)?;
+            but_api::legacy::stack::create_reference(
+                ctx,
+                but_api::legacy::stack::create_reference::Request {
+                    new_name: branch_name.clone(),
+                    anchor: None,
+                },
+            )?;
+            if let Some(out) = out.for_human() {
+                writeln!(out, "Created new branch '{branch_name}'")?;
+            }
+            branch_name
+        } else if stack_top_branches.len() == 1 {
+            stack_top_branches.into_iter().next().unwrap()
+        } else {
+            match crate::tui::stage_viewer::run_branch_selector(&stack_top_branches)? {
+                Some(name) => name,
+                None => {
+                    if let Some(out) = out.for_human() {
+                        writeln!(out, "Stage cancelled.")?;
+                    }
+                    return Ok(());
+                }
+            }
+        }
+    };
+
+    // Only show unassigned hunks - hunks already staged to a branch are skipped.
+    let files = StageFileEntry::from_worktree_filtered(&id_map, true);
+
+    if files.is_empty() {
+        bail!("No unstaged changes to stage.");
+    }
+
+    let stdin = std::io::stdin();
+    let mut reader = std::io::BufReader::new(stdin.lock());
+    let mut writer = std::io::stderr();
+
+    let result = run_patch_viewer(files, &branch_name, &mut reader, &mut writer)?;
+
+    match result {
+        PatchResult::Done { selected, .. } => {
+            if selected.is_empty() {
+                if let Some(out) = out.for_human() {
+                    writeln!(out, "No hunks selected. Nothing staged.")?;
+                }
+                return Ok(());
+            }
+            create_snapshot(ctx, OperationKind::MoveHunk);
+            // Only assign selected hunks; leave unselected hunks in their current state
+            // so that previously-staged hunks aren't overwritten on subsequent runs.
+            let reqs =
+                assign::to_assignment_request(ctx, selected.into_iter(), Some(&branch_name))?;
+            assign::do_assignments(ctx, reqs)?;
+            if let Some(out) = out.for_human() {
+                writeln!(
+                    out,
+                    "Staged selected hunks → {}.",
+                    format!("[{branch_name}]").green()
+                )?;
+            }
+            Ok(())
+        }
+    }
+}
+
 /// Handler for `but unstage <file_or_hunk> [branch]` - runs `but rub <file_or_hunk> zz`
 /// Validates that file_or_hunk is uncommitted or a path prefix. Optionally
 /// validates it's assigned to the specified branch.

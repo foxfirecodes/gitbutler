@@ -11,6 +11,7 @@ pub mod get_text;
 
 pub(crate) mod diff_viewer;
 pub mod editor;
+pub(crate) mod patch_viewer;
 pub(crate) mod stage_viewer;
 
 use std::{

@@ -55,10 +55,25 @@ impl StageFileEntry {
     }
 
     pub fn from_worktree(id_map: &crate::IdMap) -> Vec<StageFileEntry> {
+        Self::from_worktree_filtered(id_map, false)
+    }
+
+    /// Load uncommitted hunks from the worktree, optionally filtering to only unassigned hunks.
+    ///
+    /// When `unassigned_only` is true, hunks that are already assigned to a stack/branch
+    /// are excluded. This is useful for patch mode where we only want to show hunks that
+    /// haven't been staged yet.
+    pub fn from_worktree_filtered(
+        id_map: &crate::IdMap,
+        unassigned_only: bool,
+    ) -> Vec<StageFileEntry> {
         let mut by_path: BTreeMap<String, Vec<&but_hunk_assignment::HunkAssignment>> =
             BTreeMap::new();
         for uncommitted_hunk in id_map.uncommitted_hunks.values() {
             let a = &uncommitted_hunk.hunk_assignment;
+            if unassigned_only && a.stack_id.is_some() {
+                continue;
+            }
             by_path.entry(a.path.clone()).or_default().push(a);
         }
 
