@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use anyhow::{Context as _, Result, bail};
+use anyhow::{bail, Context as _, Result};
 use bstr::ByteSlice;
 use but_api::legacy::modes::{
     abort_edit_and_return_to_workspace, enter_edit_mode,
@@ -13,10 +13,10 @@ use gitbutler_edit_mode::commands::changes_from_initial;
 use gitbutler_operating_modes::OperatingMode;
 
 use crate::{
-    IdMap,
     args::edit_mode::Subcommands,
     id::{CliId, CommitId},
     utils::OutputChannel,
+    IdMap,
 };
 
 fn current_operating_mode(ctx: &mut Context) -> Result<OperatingMode> {
@@ -50,8 +50,6 @@ pub(crate) fn handle(
 }
 
 fn enter_edit(ctx: &mut Context, out: &mut OutputChannel, commit_id_str: &str) -> Result<()> {
-    use gix::{prelude::ObjectIdExt as _, revision::walk::Sorting};
-
     let id_map = IdMap::legacy_new_from_context(ctx)?;
     let matches = id_map.parse_using_context(commit_id_str, ctx)?;
 
@@ -75,37 +73,19 @@ fn enter_edit(ctx: &mut Context, out: &mut OutputChannel, commit_id_str: &str) -
         _ => bail!("'{commit_id_str}' does not refer to a commit"),
     };
 
-    // Find which stack this commit belongs to
-    let stacks = but_api::legacy::workspace::stacks(ctx, None)?;
-    let gix_repo = ctx.repo.get()?;
-    let mut found_stack_id = None;
-    'outer: for stack in &stacks {
-        for head in &stack.heads {
-            let traversal = head
-                .tip
-                .attach(&gix_repo)
-                .ancestors()
-                .sorting(Sorting::BreadthFirst)
-                .all()?;
-
-            for info in traversal {
-                let info = info?;
-                if info.id == commit_gix_oid {
-                    found_stack_id = stack.id;
-                    break 'outer;
-                }
-            }
-        }
+    let stack_id = {
+        let guard = ctx.shared_worktree_access();
+        let (_, workspace, _) = ctx.workspace_and_db_with_perm(guard.read_permission())?;
+        workspace
+            .find_owner_indexes_by_commit_id(commit_gix_oid)
+            .and_then(|(stack_idx, _, _)| workspace.stacks[stack_idx].id)
     }
-
-    let stack_id = found_stack_id.ok_or_else(|| {
+    .ok_or_else(|| {
         anyhow::anyhow!(
             "Could not find stack containing commit {}",
             &commit_gix_oid.to_string()[..7]
         )
     })?;
-
-    drop(gix_repo);
 
     enter_edit_mode(ctx, commit_gix_oid, stack_id).context("Failed to enter edit mode")?;
 
